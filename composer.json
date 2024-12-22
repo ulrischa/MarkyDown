@@ -1,11 +1,11 @@
 {
-    "name": "deinname/html-to-markdown-converter",
-    "description": "Ein PHP-Projekt zur Umwandlung von HTML-Inhalten aus einer URL in Markdown.",
+    "name": "ulrischa/markydown",
+    "description": "Get clean markdown from html",
     "type": "project",
     "require": {
-        	"php": ">=7.4",
+        "php": ">=7.4",
 		"fivefilters/readability.php": "^3.0",
-        	"league/html-to-markdown": "^5.0",
+        "league/html-to-markdown": "^5.0",
 		"ezyang/htmlpurifier": "^4.14",
         "symfony/css-selector": "^5.4"
     },
@@ -17,8 +17,8 @@
     "license": "MIT",
     "authors": [
         {
-            "name": "Dein Name",
-            "email": "deine.email@example.com"
+            "name": "Uli Schäffler",
+            "email": "uli@ulrischa.de"
         }
     ],
     "minimum-stability": "stable",
