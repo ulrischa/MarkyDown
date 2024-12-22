@@ -475,7 +475,7 @@ $excludeSelectors = $_POST['exclude_selectors'] ?? null;
 
 </head>
 <body>
-<a style="position:absolute;top:0;right:0;dispay:block;" href="https://github.com/you"><img decoding="async" width="149" height="149" src="https://github.blog/wp-content/uploads/2008/12/forkme_right_white_ffffff.png" class="attachment-full size-full" alt="Fork me on GitHub" loading="lazy"></a>
+<a style="position:absolute;top:0;right:0;dispay:block;" href="https://github.com/ulrischa/MarkyDown"><img decoding="async" width="149" height="149" src="https://github.blog/wp-content/uploads/2008/12/forkme_right_white_ffffff.png" class="attachment-full size-full" alt="Fork me on GitHub" loading="lazy"></a>
 <div class="container">
     <a href="index.php"><h1><img src="markydown.jpg" alt="MarkyDown - Scrape it to markdown" class="headimg" />
     </h1></a>
