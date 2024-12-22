@@ -41,6 +41,7 @@ class RateLimiter
 {
     private $sessionKey = 'last_submission_time';
     private $limitSeconds;
+    private $remainingTime;
 
     public function __construct($limitSeconds = 10)
     {
@@ -527,7 +528,7 @@ $excludeSelectors = $_POST['exclude_selectors'] ?? null;
         <summary>Help</summary>
         <div>
             <h2>How to Use</h2>
-            <p>This tool converts HTML content from a specified URL or pasted HTML into Markdown. You can optionally specify CSS selectors to refine the content extraction.</p>
+            <p>This tool converts HTML main content from a specified URL or pasted HTML into Markdown. If you do not specify anything it will guess the main content. The result is the clean content and not cluttered. You can optionally specify CSS selectors to refine the content extraction. Then the result is as you defined it.</p>
             
             <h3>Input Methods</h3>
             <ul>
@@ -539,27 +540,20 @@ $excludeSelectors = $_POST['exclude_selectors'] ?? null;
             <ul>
                 <li><strong>CSS Selector for Main Content:</strong> Define a CSS selector to specify the main content area you want to convert. Examples:
                     <ul>
-                        <li><code>main</code> – Selects the &lt;main&gt; element.</li>
-                        <li><code>.content</code> – Selects all elements with the class "content".</li>
-                        <li><code>#article</code> – Selects the element with the ID "article".</li>
+                        <li><code>main</code> Selects the &lt;main&gt; element.</li>
+                        <li><code>.content</code> Selects all elements with the class "content".</li>
+                        <li><code>#article</code> Selects the element with the ID "article".</li>
                     </ul>
                 </li>
                 <li><strong>CSS Selectors to Exclude:</strong> Provide a comma-separated list of CSS selectors to remove unwanted elements before conversion. Examples:
                     <ul>
-                        <li><code>.ads</code> – Removes all elements with the class "ads".</li>
-                        <li><code>#sidebar</code> – Removes the element with the ID "sidebar".</li>
-                        <li><code>header, footer</code> – Removes &lt;header&gt; and &lt;footer&gt; elements.</li>
+                        <li><code>.ads</code> Removes all elements with the class "ads".</li>
+                        <li><code>#sidebar</code> Removes the element with the ID "sidebar".</li>
+                        <li><code>header, footer</code> Removes &lt;header&gt; and &lt;footer&gt; elements.</li>
                     </ul>
                 </li>
             </ul>
-            
-            <h3>Examples</h3>
-            <ul>
-                <li>If you just paste the url or html the main content will be extracted with the readability library</li>
-                <li>To extract the main content, use the selector <code>main</code>.</li>
-                <li>To extract the main content and remove all advertisement areas, use <code>main</code> as the main content selector and <code>.ads</code> as the exclusion selector.</li>
-            </ul>
-        </div>
+                    </div>
     </details>
 
     <?php if (!empty($formHandler->markdownOutput)): ?>
