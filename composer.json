@@ -1,0 +1,25 @@
+{
+    "name": "deinname/html-to-markdown-converter",
+    "description": "Ein PHP-Projekt zur Umwandlung von HTML-Inhalten aus einer URL in Markdown.",
+    "type": "project",
+    "require": {
+        "php": ">=7.4",
+		"fivefilters/readability.php": "^1.0",
+        "league/html-to-markdown": "^5.0",
+		"ezyang/htmlpurifier": "^4.14"
+    },
+    "autoload": {
+        "psr-4": {
+            "ulrischa\\": "src/"
+        }
+    },
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Dein Name",
+            "email": "deine.email@example.com"
+        }
+    ],
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
