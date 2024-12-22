@@ -3,10 +3,11 @@
     "description": "Ein PHP-Projekt zur Umwandlung von HTML-Inhalten aus einer URL in Markdown.",
     "type": "project",
     "require": {
-        "php": ">=7.4",
-		"fivefilters/readability.php": "^1.0",
-        "league/html-to-markdown": "^5.0",
-		"ezyang/htmlpurifier": "^4.14"
+        	"php": ">=7.4",
+		"fivefilters/readability.php": "^3.0",
+        	"league/html-to-markdown": "^5.0",
+		"ezyang/htmlpurifier": "^4.14",
+        "symfony/css-selector": "^5.4"
     },
     "autoload": {
         "psr-4": {

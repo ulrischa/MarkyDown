@@ -2,12 +2,13 @@
 // src/MarkyMark.php
 namespace ulrischa;
 
+use Symfony\Component\CssSelector\CssSelectorConverter;
 use League\HTMLToMarkdown\HtmlConverter;
 use HTMLPurifier;
 use HTMLPurifier_Config;
-use andreskrey\Readability\Readability;
-use andreskrey\Readability\Configuration;
-use andreskrey\Readability\ParseException;
+use fivefilters\Readability\Readability;
+use fivefilters\Readability\Configuration;
+use fivefilters\Readability\ParseException;
 
 /**
  * Class MarkyDown
@@ -19,9 +20,16 @@ use andreskrey\Readability\ParseException;
  */
 class MarkyDown
 {
-	private $submittedURL;
-private $submittedHTML;
+    private $submittedURL;
+    private $submittedHTML;
+    private $cssSelectorConverter;
+    private $domDocument; // Added property to store DOMDocument instance
 
+    public function __construct()
+    {
+        // Initialize the CSS selector converter
+        $this->cssSelectorConverter = new CssSelectorConverter();
+    }
 
     /**
      * @var array List of forbidden hostnames or IP addresses to prevent SSRF attacks.
@@ -108,19 +116,32 @@ private $submittedHTML;
                 return '';
             }
             
+            // Load HTML into DOMDocument once
+            libxml_use_internal_errors(true);
+            $this->domDocument = new \DOMDocument();
+            $loaded = $this->domDocument->loadHTML(mb_convert_encoding($htmlContent, 'HTML-ENTITIES', 'UTF-8'), LIBXML_NONET);
+            libxml_clear_errors();
+
+            if (!$loaded) {
+                error_log("Failed to load HTML into DOMDocument.");
+                return '';
+            }
 
             // Remove exclusion selectors if provided
             if ($excludeSelectors) {
-                $htmlContent = $this->removeExclusions($htmlContent, $excludeSelectors);
+                $htmlContent = $this->removeExclusions($excludeSelectors);
                 if (empty($htmlContent)) {
                     error_log("HTML content is empty after removing exclusions.");
                     return '';
                 }
             }
 
+             // Extract <h1> element
+            $h1Content = $this->extractH1();
+
             // Extract main content using selector or Readability
             if ($mainSelector) {
-                $contentHtml = $this->extractContentBySelector($htmlContent, $mainSelector);
+                $contentHtml = $this->extractContentBySelector($mainSelector);
             } else {
                 $contentHtml = $this->extractMainContent($htmlContent);
             }
@@ -145,11 +166,16 @@ private $submittedHTML;
             // Convert purified HTML to Markdown
             $markdown = $converter->convert($cleanHtml);
 
+             // Check and insert <h1> if not present in Markdown
+            if ($h1Content && strpos($markdown, $h1Content) === false) {
+                $markdown = "# " . $h1Content . "\n\n" . $markdown;
+            }
+
             // Optionally, remove excessive blank lines
             $markdown = preg_replace("/\n{3,}/", "\n\n", $markdown);
             
-            // lastly remove again tags
-            $markdown =strip_tags($markdown) ;
+            // Lastly remove any remaining HTML tags
+            $markdown = strip_tags($markdown);
 
             return $markdown;
         } catch (\Exception $e) {
@@ -159,26 +185,28 @@ private $submittedHTML;
     }
 
     /**
-     * Removes elements based on exclusion selectors from the HTML content.
+     * Extracts the content of the first <h1> element from the DOMDocument.
      *
-     * @param string $html The complete HTML content.
+     * @return string|null The content of the <h1> tag or null if not found.
+     */
+    private function extractH1(): ?string
+    {
+        $xpath = new \DOMXPath($this->domDocument);
+        $h1Node = $xpath->query("//h1")->item(0);
+
+        return $h1Node ? trim($h1Node->nodeValue) : null;
+    }
+
+
+    /**
+     * Removes elements based on exclusion selectors from the DOMDocument.
+     *
      * @param string $excludeSelectors Comma-separated CSS selectors to exclude.
      * @return string The HTML content with excluded elements removed.
      */
-    private function removeExclusions(string $html, string $excludeSelectors): string
+    private function removeExclusions(string $excludeSelectors): string
     {
-        libxml_use_internal_errors(true);
-        $doc = new \DOMDocument();
-        // Disable external entity loading for security
-        $loaded = $doc->loadHTML(mb_convert_encoding($html, 'HTML-ENTITIES', 'UTF-8'), LIBXML_NONET);
-        libxml_clear_errors();
-
-        if (!$loaded) {
-            error_log("DOMDocument failed to load HTML for exclusions.");
-            return '';
-        }
-
-        $xpath = new \DOMXPath($doc);
+        $xpath = new \DOMXPath($this->domDocument);
         $selectors = array_map('trim', explode(',', $excludeSelectors));
 
         foreach ($selectors as $selector) {
@@ -197,30 +225,18 @@ private $submittedHTML;
             }
         }
 
-        return $doc->saveHTML();
+        return $this->domDocument->saveHTML();
     }
 
     /**
-     * Extracts content based on a CSS selector.
+     * Extracts content based on a CSS selector from the DOMDocument.
      *
-     * @param string $html The complete HTML content.
      * @param string $selector CSS selector for the content area.
      * @return string The extracted HTML content.
      */
-    private function extractContentBySelector(string $html, string $selector): string
+    private function extractContentBySelector(string $selector): string
     {
-        libxml_use_internal_errors(true);
-        $doc = new \DOMDocument();
-        // Disable external entity loading for security
-        $loaded = $doc->loadHTML(mb_convert_encoding($html, 'HTML-ENTITIES', 'UTF-8'), LIBXML_NONET);
-        libxml_clear_errors();
-
-        if (!$loaded) {
-            error_log("DOMDocument failed to load HTML for selector extraction.");
-            return '';
-        }
-
-        $xpath = new \DOMXPath($doc);
+        $xpath = new \DOMXPath($this->domDocument);
         $xpathQuery = $this->cssToXPath($selector);
         if (empty($xpathQuery)) {
             error_log("Invalid main content selector: $selector");
@@ -242,7 +258,7 @@ private $submittedHTML;
         // Extract inner HTML
         $innerHTML = '';
         foreach ($node->childNodes as $child) {
-            $innerHTML .= $doc->saveHTML($child);
+            $innerHTML .= $this->domDocument->saveHTML($child);
         }
 
         if (empty(trim($innerHTML))) {
@@ -262,20 +278,18 @@ private $submittedHTML;
     private function extractMainContent(string $html): string
     {
         $configuration = new Configuration([
-    'fixRelativeURLs' => true,
-    'OriginalURL' =>  $this->submittedURL ?? ''
-]);
+            'fixRelativeURLs' => true,
+            'OriginalURL' =>  $this->submittedURL ?? ''
+        ]);
 
         $readability = new Readability($configuration);
         try {
-    $readability->parse($html);
-    return $readability->getContent();
-} catch (ParseException $e) {
-    error_log('Error processing text: %s', $e->getMessage());
-    return '';
-}
-
-        
+            $readability->parse($html);
+            return $readability->getContent();
+        } catch (ParseException $e) {
+            error_log('Error processing text: ' . $e->getMessage());
+            return '';
+        }
     }
 
     /**
@@ -448,65 +462,20 @@ private $submittedHTML;
     }
 
     /**
-     * Converts a CSS selector to an XPath expression.
-     * Supports:
-     * - Element names (e.g., 'main')
-     * - ID selectors (#id)
-     * - Class selectors (.class)
-     * - Attribute selectors ([attr], [attr=value])
-     * - Combined selectors (e.g., div.class#id[attr=value])
+     * Converts a CSS selector to an XPath expression using Symfony's CssSelector.
      *
      * @param string $selector The CSS selector.
      * @return string The corresponding XPath expression.
      */
     private function cssToXPath(string $selector): string
     {
-        // Split the selector into parts
-        preg_match('/^([a-zA-Z][a-zA-Z0-9]*)?(#[a-zA-Z0-9\-_]+)?((\.[a-zA-Z0-9\-_]+)*)?((\[[^\]]+\])*)$/', $selector, $matches);
-
-        if (empty($matches)) {
+        try {
+            // Convert CSS selector to XPath
+            return $this->cssSelectorConverter->toXPath($selector);
+        } catch (\Exception $e) {
+            error_log("Invalid CSS Selector: " . $e->getMessage());
             return '';
         }
-
-        $tag = $matches[1] ?? '*';
-        $id = $matches[2] ?? '';
-        $classes = $matches[3] ?? '';
-        $attributes = $matches[5] ?? '';
-
-        $xpath = "//" . htmlspecialchars($tag, ENT_QUOTES, 'UTF-8');
-
-        $conditions = [];
-
-        if ($id) {
-            $id = substr($id, 1);
-            $conditions[] = "@id='" . htmlspecialchars($id, ENT_QUOTES, 'UTF-8') . "'";
-        }
-
-        if ($classes) {
-            preg_match_all('/\.([a-zA-Z0-9\-_]+)/', $classes, $classMatches);
-            foreach ($classMatches[1] as $class) {
-                $conditions[] = "contains(concat(' ', normalize-space(@class), ' '), ' " . htmlspecialchars($class, ENT_QUOTES, 'UTF-8') . " ')";
-            }
-        }
-
-        if ($attributes) {
-            preg_match_all('/\[(.*?)\]/', $attributes, $attrMatches);
-            foreach ($attrMatches[1] as $attr) {
-                if (strpos($attr, '=') !== false) {
-                    list($attrName, $attrValue) = explode('=', $attr, 2);
-                    $attrValue = trim($attrValue, '"\'');
-                    $conditions[] = "@" . htmlspecialchars($attrName, ENT_QUOTES, 'UTF-8') . "='" . htmlspecialchars($attrValue, ENT_QUOTES, 'UTF-8') . "'";
-                } else {
-                    $conditions[] = "@" . htmlspecialchars($attr, ENT_QUOTES, 'UTF-8') . "";
-                }
-            }
-        }
-
-        if (!empty($conditions)) {
-            $xpath .= "[" . implode(" and ", $conditions) . "]";
-        }
-
-        return $xpath;
     }
 
     /**
