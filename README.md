@@ -183,7 +183,3 @@ Tests include extraction, exclusions, Unicode, code and tables, Accept negotiati
 Dependencies remain on PHP-7.4-compatible lines: Readability 3.x, Symfony CssSelector 5.4, League URI 6.x and HTML-to-Markdown 5.x. Newer major lines may require newer PHP versions or API changes; they are not silently substituted. Dependency versions are recorded in `composer.lock`.
 
 See [CHANGELOG.md](CHANGELOG.md) for behavior changes when upgrading.
-
-## License
-
-MIT. Maintained by Uli Schäffler.
