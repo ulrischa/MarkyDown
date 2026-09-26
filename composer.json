@@ -35,5 +35,12 @@
         },
         "allow-plugins": false,
         "sort-packages": true
+    },
+    "scripts": {
+        "test": [
+            "@php tests/run.php",
+            "@php tests/fetcher.php",
+            "@php tests/http.php"
+        ]
     }
 }
