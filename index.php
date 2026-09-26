@@ -1,185 +1,77 @@
 <?php
-session_start(); // Start the session at the very top
-
+// Web interface maintained by Uli Schäffler.
 require __DIR__ . '/vendor/autoload.php';
 
 use ulrischa\MarkyDown;
 
-// Set Security Headers
-header("X-Content-Type-Options: nosniff");
-header("X-Frame-Options: DENY");
-header("X-XSS-Protection: 1; mode=block");
-header("Referrer-Policy: no-referrer");
+if (!session_start([
+    'use_strict_mode' => 1,
+    'cookie_httponly' => true,
+    'cookie_secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+    'cookie_samesite' => 'Lax',
+])) {
+    http_response_code(500);
+    header('Content-Type: text/plain; charset=UTF-8');
+    exit('Session storage is unavailable. Please check the server configuration.');
+}
+header('Content-Type: text/html; charset=UTF-8');
+header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: DENY');
+header('Referrer-Policy: no-referrer');
+$script_nonce = base64_encode(random_bytes(18));
+header("Content-Security-Policy: default-src 'self'; img-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'nonce-$script_nonce'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
+header('Cache-Control: no-store');
 
-/**
- * Class CSRFProtection
- * Handles CSRF token generation and validation.
- */
-class CSRFProtection
+function post_string(string $name): string
 {
-    private $tokenKey = 'csrf_token';
-
-    public function generateToken()
-    {
-        if (empty($_SESSION[$this->tokenKey])) {
-            $_SESSION[$this->tokenKey] = bin2hex(random_bytes(32));
-        }
-        return $_SESSION[$this->tokenKey];
-    }
-
-    public function validateToken($token)
-    {
-        return isset($_SESSION[$this->tokenKey]) && hash_equals($_SESSION[$this->tokenKey], $token);
-    }
+    return isset($_POST[$name]) && is_string($_POST[$name]) ? trim($_POST[$name]) : '';
 }
 
-/**
- * Class RateLimiter
- * Manages form submission rate limiting.
- */
-class RateLimiter
-{
-    private $sessionKey = 'last_submission_time';
-    private $limitSeconds;
-    private $remainingTime;
-
-    public function __construct($limitSeconds = 10)
-    {
-        $this->limitSeconds = $limitSeconds;
-    }
-
-    public function isAllowed()
-    {
-        $currentTime = time();
-        if (isset($_SESSION[$this->sessionKey])) {
-            $elapsedTime = $currentTime - $_SESSION[$this->sessionKey];
-            if ($elapsedTime < $this->limitSeconds) {
-                $this->remainingTime = $this->limitSeconds - $elapsedTime;
-                return false;
-            }
-        }
-        // Update the last submission time
-        $_SESSION[$this->sessionKey] = $currentTime;
-        return true;
-    }
-
-    public function getRemainingTime()
-    {
-        return isset($this->remainingTime) ? $this->remainingTime : 0;
+$csrf_token = $_SESSION['csrf_token'] ?? bin2hex(random_bytes(32));
+$_SESSION['csrf_token'] = $csrf_token;
+$url_input = post_string('url');
+$html_input = post_string('html');
+$main_selector = post_string('main_selector');
+$exclude_selectors = post_string('exclude_selectors');
+$selector_type = post_string('selector_type') ?: 'css';
+$input_type = post_string('input_type') ?: 'url';
+$form_handler = (object) ['markdownOutput' => '', 'errorMessage' => ''];
+$should_convert = false;
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+    if (!hash_equals($csrf_token, post_string('csrf_token'))) {
+        $form_handler->errorMessage = 'Invalid or expired form token. Please try again.';
+    } elseif (time() - ($_SESSION['last_submission_time'] ?? 0) < 5) {
+        $form_handler->errorMessage = 'Please wait five seconds between conversions.';
+    } elseif (!in_array($selector_type, ['css', 'xpath'], true)) {
+        $form_handler->errorMessage = 'Choose CSS or XPath.';
+    } else {
+        $_SESSION['last_submission_time'] = time();
+        $should_convert = true;
     }
 }
-
-/**
- * Class FormHandler
- * Processes form data, validates inputs, and interacts with the Markdown converter.
- */
-class FormHandler
-{
-    private $csrf;
-    private $rateLimiter;
-    public $markdownOutput = '';
-    public $errorMessage = '';
-    private $converter;
-
-    public function __construct(CSRFProtection $csrf, RateLimiter $rateLimiter)
-    {
-        $this->csrf = $csrf;
-        $this->rateLimiter = $rateLimiter;
-        $this->converter = new MarkyDown();
-    }
-
-    public function processRequest()
-    {
-        $requestMethod = $_SERVER['REQUEST_METHOD'];
-        $urlInput = null;
-        $htmlInput = null;
-        $mainSelector = null;
-        $excludeSelectors = null;
-
-        if ($requestMethod === 'POST') {
-            // Validate CSRF Token
-            if (!isset($_POST['csrf_token']) || !$this->csrf->validateToken($_POST['csrf_token'])) {
-                $this->errorMessage = 'Invalid CSRF token. Please try submitting the form again.';
-                return;
-            }
-
-            // Rate Limiting
-            if (!$this->rateLimiter->isAllowed()) {
-                $remaining = $this->rateLimiter->getRemainingTime();
-                $this->errorMessage = 'Please wait ' . $remaining . ' seconds before submitting the form again.';
-                return;
-            }
-
-            // Retrieve and sanitize inputs
-            if (isset($_POST['url']) && !empty(trim($_POST['url']))) {
-                $urlInput = filter_var(trim($_POST['url']), FILTER_SANITIZE_URL);
-                $mainSelector = $this->sanitizeSelector($_POST['main_selector'] ?? '');
-                $excludeSelectors = $this->sanitizeSelectorsArray($_POST['exclude_selectors'] ?? '');
-            } elseif (isset($_POST['html']) && !empty(trim($_POST['html']))) {
-                $htmlInput = htmlspecialchars(trim($_POST['html']), ENT_QUOTES, 'UTF-8');
-                $mainSelector = $this->sanitizeSelector($_POST['main_selector'] ?? '');
-                $excludeSelectors = $this->sanitizeSelectorsArray($_POST['exclude_selectors'] ?? '');
-            } else {
-                $this->errorMessage = 'Please provide either a URL or HTML content.';
-                return;
-            }
-
-            // Ensure only one input method is used
-            if ($urlInput && $htmlInput) {
-                $this->errorMessage = 'Please provide either a URL or HTML content, not both.';
-                return;
-            }
-
-            // Proceed with conversion
-            try {
-                $this->markdownOutput = $this->converter->convert($urlInput, $htmlInput, $mainSelector, $excludeSelectors);
-
-                if (empty($this->markdownOutput)) {
-                    $this->errorMessage = 'No content could be extracted or converted. Please check your input and selectors.';
-                }
-            } catch (Exception $e) {
-                error_log("Page Load Error: " . $e->getMessage());
-                $this->errorMessage = 'An unexpected error occurred. Please try again later.';
-            }
+// Release the session lock before fetching a remote page.
+session_write_close();
+if ($should_convert) {
+    try {
+        $converter = new MarkyDown();
+        $options = ['selector' => $main_selector, 'selector_type' => $selector_type, 'exclude' => $exclude_selectors];
+        if ($input_type === 'url') {
+            $form_handler->markdownOutput = $converter->convertUrl($url_input, $options);
+            $html_input = '';
+        } elseif ($input_type === 'html') {
+            $form_handler->markdownOutput = $converter->convertHtml($html_input, $options);
+            $url_input = '';
+        } else {
+            throw new InvalidArgumentException('Invalid input method.');
         }
-    }
-
-    private function sanitizeSelector($selector)
-    {
-        return preg_match('/^[a-zA-Z][a-zA-Z0-9\#\.\-\_\[\]=]+$/', $selector) ? $selector : null;
-    }
-
-    private function sanitizeSelectorsArray($selectors)
-    {
-        $selectors = explode(',', $selectors);
-        $sanitized = [];
-        foreach ($selectors as $sel) {
-            $sel = trim($sel);
-            if (preg_match('/^[a-zA-Z0-9\#\.\-\_,\s\[\]=]+$/', $sel)) {
-                $sanitized[] = htmlspecialchars($sel, ENT_QUOTES, 'UTF-8');
-            }
+        if ($form_handler->markdownOutput === '') {
+            $form_handler->errorMessage = 'No content could be converted. Try an explicit content selector.';
         }
-        return !empty($sanitized) ? implode(', ', $sanitized) : null;
+    } catch (Throwable $e) {
+        error_log('MarkyDown form conversion failed: ' . get_class($e));
+        $form_handler->errorMessage = 'Conversion failed. Check the input, selector syntax and matching elements. URLs must return public HTML on port 80 or 443; HTML must be UTF-8 and at most 1 MiB.';
     }
 }
-
-// Instantiate classes
-$csrf = new CSRFProtection();
-$rateLimiter = new RateLimiter(5); // 5 seconds rate limit
-$formHandler = new FormHandler($csrf, $rateLimiter);
-
-// Generate CSRF token
-$csrfToken = $csrf->generateToken();
-
-// Process the form if submitted
-$formHandler->processRequest();
-
-// Initialize variables for form fields
-$urlInput = $_POST['url'] ?? null;
-$htmlInput = $_POST['html'] ?? null;
-$mainSelector = $_POST['main_selector'] ?? null;
-$excludeSelectors = $_POST['exclude_selectors'] ?? null;
-
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -200,7 +92,6 @@ $excludeSelectors = $_POST['exclude_selectors'] ?? null;
             --error-color: #e74c3c;
             --border-color: #dcdcdc;
             --button-hover-color: #357ABD;
-            --spinner-color: #4A90E2;
         }
 
         /* Apply box-sizing globally to include padding and borders within the element's total width */
@@ -271,6 +162,7 @@ $excludeSelectors = $_POST['exclude_selectors'] ?? null;
         }
 
         /* Ensure input elements fit within their containers */
+        select,
         input[type="url"],
         input[type="text"],
         textarea {
@@ -289,7 +181,7 @@ $excludeSelectors = $_POST['exclude_selectors'] ?? null;
         input[type="text"]:focus,
         textarea:focus {
             border-color: var(--primary-color);
-            outline: none;
+            outline-offset: 3px;
             box-shadow: 0 0 5px rgba(74, 144, 226, 0.5);
         }
 
@@ -379,7 +271,7 @@ $excludeSelectors = $_POST['exclude_selectors'] ?? null;
             font-size: 1.1em;
             cursor: pointer;
             color: var(--primary-color);
-            outline: none;
+            outline-offset: 3px;
         }
 
         summary::marker {
@@ -391,30 +283,6 @@ $excludeSelectors = $_POST['exclude_selectors'] ?? null;
             line-height: 1.6;
         }
 
-        /* Loading Overlay Styles */
-        .loading-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(255, 255, 255, 0.9);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 10000;
-            display: none; /* Hidden by default */
-        }
-
-        .spinner {
-            border: 8px solid #f3f3f3;
-            border-top: 8px solid var(--spinner-color);
-            border-radius: 50%;
-            width: 60px;
-            height: 60px;
-            animation: spin 1s linear infinite;
-        }
-        
         .headimg {
             display: block;
             margin-left: auto;
@@ -422,10 +290,7 @@ $excludeSelectors = $_POST['exclude_selectors'] ?? null;
             width: 50%;
         }
 
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+
 
         /* Responsive Design */
         @media (max-width: 768px) {
@@ -465,70 +330,68 @@ $excludeSelectors = $_POST['exclude_selectors'] ?? null;
                 font-size: 0.95em;
             }
 
-            .spinner {
-                width: 50px;
-                height: 50px;
-                border-width: 6px;
-            }
+
          
         }
     </style>
 
 </head>
 <body>
-<a style="position:absolute;top:0;right:0;dispay:block;" href="https://github.com/ulrischa/MarkyDown"><img decoding="async" width="149" height="149" src="https://github.blog/wp-content/uploads/2008/12/forkme_right_white_ffffff.png" class="attachment-full size-full" alt="Fork me on GitHub" loading="lazy"></a>
+<a style="position:absolute;top:12px;right:12px;" href="https://github.com/ulrischa/MarkyDown">GitHub</a>
 <div class="container">
     <a href="index.php"><h1><img src="markydown.jpg" alt="MarkyDown - Scrape it to markdown" class="headimg" />
     </h1></a>
     <form method="post" action="" id="converterForm">
         <!-- Include CSRF Token as a hidden field -->
-        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8'); ?>">
+        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token, ENT_QUOTES, 'UTF-8'); ?>">
 
         <fieldset>
             <legend><strong>Choose Input Method:</strong></legend>
             <label>
-                <input type="radio" name="input_type" value="url" <?php if (!$htmlInput) echo 'checked'; ?>> Provide URL
+                <input type="radio" name="input_type" value="url" <?php if ($input_type !== 'html') echo 'checked'; ?>> Provide URL
             </label>
             <label>
-                <input type="radio" name="input_type" value="html" <?php if ($htmlInput) echo 'checked'; ?>> Paste HTML
+                <input type="radio" name="input_type" value="html" <?php if ($input_type === 'html') echo 'checked'; ?>> Paste HTML
             </label>
         </fieldset>
 
         <div id="urlInput">
             <label for="url">URL:</label>
-            <input type="url" name="url" id="url" placeholder="https://example.com" pattern="https?://.+" title="Please enter a valid URL starting with http:// or https://" <?php if ($urlInput) echo 'value="' . htmlspecialchars($urlInput, ENT_QUOTES, 'UTF-8') . '"'; ?>>
+            <input type="url" name="url" id="url" placeholder="https://example.com" pattern="https?://.+" title="Please enter a valid URL starting with http:// or https://" <?php if ($url_input) echo 'value="' . htmlspecialchars($url_input, ENT_QUOTES, 'UTF-8') . '"'; ?>>
         </div>
 
-        <div id="htmlInput" style="display:none;">
+        <div id="htmlInput">
             <label for="html">HTML Content:</label>
-            <textarea name="html" id="html" rows="8" placeholder="Paste your HTML here"><?php echo isset($htmlInput) ? htmlspecialchars($htmlInput, ENT_QUOTES, 'UTF-8') : ''; ?></textarea>
+            <textarea name="html" id="html" rows="8" placeholder="Paste your HTML here"><?php echo isset($html_input) ? htmlspecialchars($html_input, ENT_QUOTES, 'UTF-8') : ''; ?></textarea>
         </div>
 
-        <label for="main_selector">CSS Selector for Main Content (optional):</label>
-        <input type="text" name="main_selector" id="main_selector" placeholder="e.g., main or .content or #article" pattern="^[a-zA-Z][a-zA-Z0-9\#\.\-\_\[\]=]+$" title="Please enter a valid CSS selector" <?php if (isset($mainSelector)) echo 'value="' . htmlspecialchars($mainSelector, ENT_QUOTES, 'UTF-8') . '"'; ?>>
+        <label for="selector_type">Selector type:</label>
+        <select id="selector_type" name="selector_type"><option value="css">CSS</option><option value="xpath" <?php if ($selector_type === 'xpath') echo 'selected'; ?>>XPath</option></select>
+        <label for="main_selector">Content Selector (optional):</label>
+        <input type="text" name="main_selector" id="main_selector" placeholder="e.g., main or .content or #article" maxlength="4096" title="Enter a CSS selector or XPath expression" <?php if (isset($main_selector)) echo 'value="' . htmlspecialchars($main_selector, ENT_QUOTES, 'UTF-8') . '"'; ?>>
 
-        <label for="exclude_selectors">CSS Selectors to Exclude (optional, separated by commas):</label>
-        <input type="text" name="exclude_selectors" id="exclude_selectors" placeholder="e.g., .ads, #sidebar" pattern="^[a-zA-Z0-9\#\.\-\_,\s\[\]=]+$" title="Please enter valid CSS exclusion selectors separated by commas" <?php if (isset($excludeSelectors)) echo 'value="' . htmlspecialchars($excludeSelectors, ENT_QUOTES, 'UTF-8') . '"'; ?>>
+        <label for="exclude_selectors">Exclusion Selector (optional; CSS list or XPath union):</label>
+        <input type="text" name="exclude_selectors" id="exclude_selectors" placeholder="e.g., .ads, #sidebar" maxlength="4096" title="Enter a CSS list or XPath union" <?php if (isset($exclude_selectors)) echo 'value="' . htmlspecialchars($exclude_selectors, ENT_QUOTES, 'UTF-8') . '"'; ?>>
 
         <button type="submit">Convert</button>
     </form>
 
-    <?php if (!empty($formHandler->markdownOutput)): ?>
+    <?php if (!empty($form_handler->markdownOutput)): ?>
         <h2>Markdown Result:</h2>
-        <div class="output" id="markdownOutput"><?php echo htmlspecialchars($formHandler->markdownOutput, ENT_QUOTES, 'UTF-8'); ?></div>
+        <div class="output" id="markdownOutput"><?php echo htmlspecialchars($form_handler->markdownOutput, ENT_QUOTES, 'UTF-8'); ?></div>
         <div class="action-buttons">
-            <button onclick="copyToClipboard()">Copy to Clipboard</button>
-            <button onclick="downloadMarkdown()">Download as .md</button>
+            <button type="button" id="copyMarkdown">Copy to Clipboard</button>
+            <button type="button" id="downloadMarkdown">Download as .md</button>
         </div>
-    <?php elseif (!empty($formHandler->errorMessage)): ?>
-        <p class="error"><?php echo htmlspecialchars($formHandler->errorMessage, ENT_QUOTES, 'UTF-8'); ?></p>
+    <?php elseif (!empty($form_handler->errorMessage)): ?>
+        <p class="error" role="alert"><?php echo htmlspecialchars($form_handler->errorMessage, ENT_QUOTES, 'UTF-8'); ?></p>
     <?php endif; ?>
 
     <details>
         <summary>Help</summary>
         <div>
             <h2>How to Use</h2>
-            <p>This tool converts HTML main content from a specified URL or pasted HTML into Markdown. If you do not specify anything it will guess the main content. The result is the clean content and not cluttered. You can optionally specify CSS selectors to refine the content extraction. Then the result is as you defined it.</p>
+            <p>This tool converts HTML main content from a specified URL or pasted HTML into Markdown. Without a content selector, Readability attempts to detect the main article. The result is the clean content and not cluttered. You can optionally specify CSS or XPath selectors to refine the content extraction. Then the result is as you defined it.</p>
             
             <h3>Input Methods</h3>
             <ul>
@@ -536,9 +399,9 @@ $excludeSelectors = $_POST['exclude_selectors'] ?? null;
                 <li><strong>Paste HTML:</strong> Directly paste the HTML content you wish to convert.</li>
             </ul>
             
-            <h3>Optional Selectors</h3>
+            <h3>Optional Selectors</h3><p>XPath example: <code>//main</code>. All matching elements are included once. Exclusions use the same selector type. Use a CSS selector list or an XPath union (<code>//nav | //aside</code>) to exclude multiple areas.</p>
             <ul>
-                <li><strong>CSS Selector for Main Content:</strong> Define a CSS selector to specify the main content area you want to convert. Examples:
+                <li><strong>Content Selector:</strong> Define a CSS selector to specify the main content area you want to convert. Examples:
                     <ul>
                         <li><code>main</code> Selects the &lt;main&gt; element.</li>
                         <li><code>.content</code> Selects all elements with the class "content".</li>
@@ -556,18 +419,12 @@ $excludeSelectors = $_POST['exclude_selectors'] ?? null;
                     </div>
     </details>
 
-    <?php if (!empty($formHandler->markdownOutput)): ?>
-    <div class="loading-overlay" id="loadingOverlay">
-        <div class="spinner"></div>
-    </div>
-    <script>
-        document.getElementById('converterForm').addEventListener('submit', function() {
-            document.getElementById('loadingOverlay').style.display = 'flex';
-        });
+    <?php if (!empty($form_handler->markdownOutput)): ?>
 
+    <script nonce="<?php echo htmlspecialchars($script_nonce, ENT_QUOTES, 'UTF-8'); ?>">
         function copyToClipboard() {
-            const markdownText = document.getElementById('markdownOutput').innerText;
-            navigator.clipboard.writeText(markdownText).then(function() {
+            const markdownText = document.getElementById('markdownOutput').textContent;
+            (navigator.clipboard ? navigator.clipboard.writeText(markdownText) : Promise.reject(new Error('Clipboard requires HTTPS. Select and copy the text manually.'))).then(function() {
                 alert('Markdown successfully copied to clipboard!');
             }, function(err) {
                 alert('Error copying: ' + err);
@@ -575,7 +432,7 @@ $excludeSelectors = $_POST['exclude_selectors'] ?? null;
         }
 
         function downloadMarkdown() {
-            const markdownText = document.getElementById('markdownOutput').innerText;
+            const markdownText = document.getElementById('markdownOutput').textContent;
             const blob = new Blob([markdownText], { type: 'text/markdown' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -584,12 +441,14 @@ $excludeSelectors = $_POST['exclude_selectors'] ?? null;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
         }
+        document.getElementById('copyMarkdown').addEventListener('click', copyToClipboard);
+        document.getElementById('downloadMarkdown').addEventListener('click', downloadMarkdown);
     </script>
     <?php endif; ?>
 
-    <script>
+    <script nonce="<?php echo htmlspecialchars($script_nonce, ENT_QUOTES, 'UTF-8'); ?>">
         document.addEventListener('DOMContentLoaded', function() {
             const inputTypeRadios = document.getElementsByName('input_type');
             const urlInputDiv = document.getElementById('urlInput');
@@ -597,53 +456,17 @@ $excludeSelectors = $_POST['exclude_selectors'] ?? null;
             const urlInput = document.getElementById('url');
             const htmlInput = document.getElementById('html');
 
-            inputTypeRadios.forEach(function(radio) {
-                radio.addEventListener('change', function() {
-                    if (this.value === 'url') {
-                        urlInputDiv.style.display = 'block';
-                        htmlInputDiv.style.display = 'none';
-                        urlInput.required = true;
-                        htmlInput.required = false;
-                    } else {
-                        urlInputDiv.style.display = 'none';
-                        htmlInputDiv.style.display = 'block';
-                        urlInput.required = false;
-                        htmlInput.required = true;
-                    }
-                });
-            });
-
-            // Initial check based on existing input
-            const selectedInputType = document.querySelector('input[name="input_type"]:checked').value;
-            if (selectedInputType === 'url') {
-                urlInputDiv.style.display = 'block';
-                htmlInputDiv.style.display = 'none';
-                urlInput.required = true;
-                htmlInput.required = false;
-            } else {
-                urlInputDiv.style.display = 'none';
-                htmlInputDiv.style.display = 'block';
-                urlInput.required = false;
-                htmlInput.required = true;
+            function updateInputMode() {
+                const useUrl = document.querySelector('input[name="input_type"]:checked').value === 'url';
+                urlInputDiv.hidden = !useUrl;
+                htmlInputDiv.hidden = useUrl;
+                urlInput.disabled = !useUrl;
+                htmlInput.disabled = useUrl;
+                urlInput.required = useUrl;
+                htmlInput.required = !useUrl;
             }
-
-            // Form validation
-            document.getElementById('converterForm').addEventListener('submit', function(e) {
-                const inputType = document.querySelector('input[name="input_type"]:checked').value;
-                if (inputType === 'url') {
-                    const url = urlInput.value.trim();
-                    if (!url) {
-                        alert('Please enter a valid URL.');
-                        e.preventDefault();
-                    }
-                } else {
-                    const html = htmlInput.value.trim();
-                    if (!html) {
-                        alert('Please paste the HTML content.');
-                        e.preventDefault();
-                    }
-                }
-            });
+            inputTypeRadios.forEach(radio => radio.addEventListener('change', updateInputMode));
+            updateInputMode();
         });
     </script>
 
