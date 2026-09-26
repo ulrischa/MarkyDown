@@ -1,5 +1,8 @@
 # MarkyDown
 
+<img width="313" height="274" alt="markydown" src="https://github.com/user-attachments/assets/75d448cd-6470-4911-b0c1-7829063f6c98" />
+
+
 Convert HTML into clean Markdown, either through the included web interface or directly in PHP. Add HTTP content negotiation to an existing PHP page so the **same URL** serves HTML to browsers and Markdown to clients requesting it.
 
 - Select content using **CSS selectors or XPath**.
