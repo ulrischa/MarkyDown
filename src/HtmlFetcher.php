@@ -4,7 +4,7 @@ namespace ulrischa;
 use League\Uri\Http;
 use League\Uri\UriResolver;
 
-/** Bounded public-page fetcher. Maintainer: Uli Schäffler. */
+/** Bounded public-page fetcher */
 class HtmlFetcher
 {
     private $maxBytes;
