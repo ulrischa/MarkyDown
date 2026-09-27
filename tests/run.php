@@ -1,5 +1,5 @@
 <?php
-// Regression tests maintained by Uli Schäffler. Run: php tests/run.php
+// Regression tests Run: php tests/run.php
 require __DIR__ . '/../vendor/autoload.php';
 
 use ulrischa\ContentNegotiation;
