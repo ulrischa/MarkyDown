@@ -1,7 +1,7 @@
 <?php
 namespace ulrischa;
 
-/** HTTP Accept selection. Maintainer: Uli Schäffler. */
+/** HTTP Accept selection */
 class ContentNegotiation
 {
     /** HTML wins ties and wildcard-only requests. Null means neither is acceptable. */
