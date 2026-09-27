@@ -1,5 +1,4 @@
 <?php
-// Example integration maintained by Uli Schäffler.
 require __DIR__ . '/../vendor/autoload.php';
 
 ulrischa\MarkdownResponse::start([
