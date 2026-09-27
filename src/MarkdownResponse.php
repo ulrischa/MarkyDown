@@ -1,7 +1,7 @@
 <?php
 namespace ulrischa;
 
-/** Optional PHP output integration. Maintainer: Uli Schäffler. */
+/** Optional PHP output integration. */
 class MarkdownResponse
 {
     private static $started = false;
