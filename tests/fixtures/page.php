@@ -1,5 +1,5 @@
 <?php
-// HTTP regression fixture maintained by Uli Schäffler; do not deploy tests.
+// HTTP regression fixture; do not deploy tests.
 require __DIR__ . '/../../vendor/autoload.php';
 $case = $_GET['case'] ?? '';
 header('Vary: Accept-Encoding');
