@@ -5,7 +5,7 @@ use Masterminds\HTML5\Parser\DOMTreeBuilder;
 use Masterminds\HTML5\Parser\Scanner;
 use Masterminds\HTML5\Parser\Tokenizer;
 
-/** Bound work while building untrusted HTML, not after it. Maintainer: Uli Schäffler. */
+/** Bound work while building untrusted HTML, not after it. */
 final class HtmlParser
 {
     public static function parse(string $html): \DOMDocument
