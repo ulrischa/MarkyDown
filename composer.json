@@ -3,11 +3,11 @@
     "description": "Convert HTML to Markdown and serve selected page content through HTTP content negotiation",
     "type": "library",
     "require": {
-        "php": ">=7.4",
+        "php": "^8.3",
         "fivefilters/readability.php": "^3.1.7",
         "league/html-to-markdown": "^5.1",
         "ezyang/htmlpurifier": "^4.18",
-        "symfony/css-selector": "^5.4",
+        "symfony/css-selector": "^7.4",
         "ext-curl": "*",
         "ext-dom": "*",
         "ext-mbstring": "*",
@@ -31,7 +31,7 @@
     "prefer-stable": true,
     "config": {
         "platform": {
-            "php": "7.4.33"
+            "php": "8.3.0"
         },
         "allow-plugins": false,
         "sort-packages": true
