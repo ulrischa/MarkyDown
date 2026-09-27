@@ -9,7 +9,7 @@ use Symfony\Component\CssSelector\CssSelectorConverter;
 use fivefilters\Readability\Configuration;
 use fivefilters\Readability\Readability;
 
-/** HTML extraction and Markdown conversion. Maintainer: Uli Schäffler. */
+/** HTML extraction and Markdown conversion */
 class MarkyDown
 {
     private $css;
