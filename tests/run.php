@@ -76,4 +76,11 @@ foreach (['file:///etc/passwd','http://127.0.0.1','http://[::1]/','http://exampl
 }
 check($converter->convertHtml('<nav><a href="//[">Broken</a></nav><main><p>Article</p></main>', ['selector'=>'main', 'base_url'=>'https://example.com/article']) === 'Article', 'Malformed link outside selection does not abort conversion');
 check(strpos($converter->convertHtml('<main><a href="//[">Article</a></main>', ['selector'=>'main', 'base_url'=>'https://example.com/article']), 'Article') !== false, 'Malformed selected link preserves text');
+rejects(function () use ($converter) {
+    $converter->convertHtml(str_repeat('<div>', 10000) . 'x' . str_repeat('</div>', 10000), ['selector' => 'div']);
+}, 'Reject deep HTML during parsing, well below the byte limit');
+rejects(function () use ($converter) {
+    $converter->convertHtml(str_repeat('<p>x</p>', 10001), ['readability' => false]);
+}, 'Reject excessive element counts');
+check($converter->convertHtml(str_repeat('<div>', 60) . '<p>Nested</p>' . str_repeat('</div>', 60), ['selector' => 'p']) === 'Nested', 'Allow ordinary nested HTML');
 echo "Passed $checks checks.\n";

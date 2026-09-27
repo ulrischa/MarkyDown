@@ -14,7 +14,7 @@ Convert HTML into clean Markdown, either through the included web interface or d
 
 ## Requirements and installation
 
-PHP **7.4 or later**, Composer 2, and the `curl`, `dom`, `mbstring` and `xml` extensions. A currently supported PHP release is recommended; PHP 7.4 compatibility is retained for existing installations.
+PHP **8.3 or later (PHP 8.x)**, Composer 2, and the `curl`, `dom`, `mbstring` and `xml` extensions. Use a currently supported, fully patched PHP release. PHP 7.4–8.2 are no longer supported by MarkyDown.
 
 ```sh
 git clone https://github.com/ulrischa/MarkyDown.git
@@ -22,7 +22,7 @@ cd MarkyDown
 composer install --no-dev --no-plugins --no-scripts --prefer-dist
 ```
 
-The committed lockfile pins versions compatible with PHP 7.4. Composer's platform setting keeps dependency updates compatible with that minimum. It does not replace installing the required PHP extensions.
+The committed lockfile pins versions compatible with PHP 8.3. Composer's platform setting keeps dependency updates compatible with that minimum. It does not replace installing the required PHP extensions.
 
 For an existing Composer application, add this repository to its `repositories` configuration and require the package:
 
@@ -161,15 +161,21 @@ For local use:
 php -S 127.0.0.1:8080
 ```
 
-Open `http://127.0.0.1:8080/`, choose URL or pasted HTML, select CSS or XPath, and optionally specify content and exclusions. Copy or download the result. Clipboard access requires HTTPS or localhost; manual text selection remains available.
+Open `http://127.0.0.1:8080/`, choose URL or pasted HTML, optionally specify CSS content and exclusion selectors. Copy or download the result. Clipboard access requires HTTPS or localhost; manual text selection remains available.
 
-For deployment, use a normal PHP web server with HTTPS. Restrict access to the converter UI or enforce server-side rate limits. The five-second session cooldown is a convenience, not protection against distributed abuse. Do not expose `.git`, `tests`, Composer metadata or `vendor` as downloadable files. The PHP development server is for local testing only.
+Arbitrary XPath and complex CSS (for example, general-sibling chains) can trigger very expensive queries even on small documents. The public web interface therefore accepts only simple CSS: element names, `*`, `.class`, `#id`, compounds such as `article.story`, and up to eight comma-separated selectors (256 bytes total). Combinators, attributes, escapes and pseudo-classes are disabled in this mode. To enable full CSS and XPath for **trusted users behind access control**, set the server environment variable `MARKYDOWN_ALLOW_ADVANCED_SELECTORS=1`. A request parameter cannot enable it. Full CSS and XPath in the PHP library/integration remain available for trusted application configuration; do not pass arbitrary public request parameters into it.
+
+For deployment, use a normal PHP web server with HTTPS. Restrict access to the converter UI or enforce server-side rate limits. When TLS terminates at a proxy, configure `session.cookie_secure=1` in PHP; the application preserves that setting and an existing `SameSite=Strict` policy. Session IDs are cookie-only.
+
+The five-second session cooldown is a convenience, not protection against distributed abuse. Do not expose `.git`, `tests`, Composer metadata or `vendor` as downloadable files. The PHP development server is for local testing only.
 
 ## Security and fetching
 
 Only public HTTP(S) targets on ports 80/443 are accepted. URL credentials are rejected. Every redirect is validated again; all returned DNS addresses must pass a conservative public-IP policy. The selected address is pinned to prevent DNS rebinding. Private, loopback, link-local, reserved, multicast and mapped/transition IPv6 ranges are blocked. Some unusual public IPv6 destinations are deliberately rejected.
 
 Fetching uses TLS verification, a five-redirect limit, a 30-second request budget, a 64 KiB response-header limit and a 1 MiB body limit by default. DNS resolution depends on the system resolver and can exceed the request budget. Ambient proxies, cookies and credentials are not forwarded. Proxy-only environments need an explicitly reviewed network adapter; do not disable address validation to make them work.
+
+HTML parsing rejects more than 10,000 opening tags or nesting beyond 128 levels, regardless of the byte limit. This bounds the work of building hostile HTML trees; excessively complex pages need to be reduced before conversion.
 
 Active HTML elements are removed and HTML Purifier sanitizes content before conversion. Markdown is **not** a universal XSS-safe output format: if you render the resulting Markdown as HTML elsewhere, sanitize that renderer's output too. Local files and external XML entities are not loaded by the HTML parser.
 
@@ -183,6 +189,6 @@ composer audit
 
 Tests include extraction, exclusions, Unicode, code and tables, Accept negotiation, unsafe targets and real HTTP integration. The HTTP tests start an ephemeral localhost PHP server and require `proc_open` and cURL.
 
-Dependencies remain on PHP-7.4-compatible lines: Readability 3.x, Symfony CssSelector 5.4, League URI 6.x and HTML-to-Markdown 5.x. Newer major lines may require newer PHP versions or API changes; they are not silently substituted. Dependency versions are recorded in `composer.lock`.
+Dependencies target PHP 8.3: Symfony CssSelector 7.4 LTS, Readability 3.x, League URI 6.x and HTML-to-Markdown 5.x. Readability 4 requires PHP 8.4 and a different API, so it is not part of this update. Newer major lines may require newer PHP versions or API changes; they are not silently substituted. Dependency versions are recorded in `composer.lock`.
 
 See [CHANGELOG.md](CHANGELOG.md) for behavior changes when upgrading.

@@ -6,9 +6,12 @@ use ulrischa\MarkyDown;
 
 if (!session_start([
     'use_strict_mode' => 1,
+    'use_only_cookies' => 1,
+    'use_trans_sid' => 0,
     'cookie_httponly' => true,
-    'cookie_secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
-    'cookie_samesite' => 'Lax',
+    'cookie_secure' => filter_var(ini_get('session.cookie_secure'), FILTER_VALIDATE_BOOLEAN)
+        || (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
+    'cookie_samesite' => strcasecmp((string) ini_get('session.cookie_samesite'), 'Strict') === 0 ? 'Strict' : 'Lax',
 ])) {
     http_response_code(500);
     header('Content-Type: text/plain; charset=UTF-8');
@@ -27,6 +30,25 @@ function post_string(string $name): string
     return isset($_POST[$name]) && is_string($_POST[$name]) ? trim($_POST[$name]) : '';
 }
 
+/** A deliberately small public-form subset; the library still accepts full CSS. */
+function is_simple_css_selector(string $selector): bool
+{
+    if ($selector === '') {
+        return true;
+    }
+    $parts = explode(',', $selector);
+    if (strlen($selector) > 256 || count($parts) > 8) {
+        return false;
+    }
+    foreach ($parts as $part) {
+        $part = trim($part);
+        if ($part === '' || !preg_match('/^(?:[a-zA-Z_][a-zA-Z0-9_-]*|\*)?(?:[.#][a-zA-Z_][a-zA-Z0-9_-]*)*$/D', $part)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 $csrf_token = $_SESSION['csrf_token'] ?? bin2hex(random_bytes(32));
 $_SESSION['csrf_token'] = $csrf_token;
 $url_input = post_string('url');
@@ -34,6 +56,8 @@ $html_input = post_string('html');
 $main_selector = post_string('main_selector');
 $exclude_selectors = post_string('exclude_selectors');
 $selector_type = post_string('selector_type') ?: 'css';
+// Full selector languages can exhaust CPU; only enable them for trusted UI users.
+$allow_advanced_selectors = getenv('MARKYDOWN_ALLOW_ADVANCED_SELECTORS') === '1';
 $input_type = post_string('input_type') ?: 'url';
 $form_handler = (object) ['markdownOutput' => '', 'errorMessage' => ''];
 $should_convert = false;
@@ -42,6 +66,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $form_handler->errorMessage = 'Invalid or expired form token. Please try again.';
     } elseif (time() - ($_SESSION['last_submission_time'] ?? 0) < 5) {
         $form_handler->errorMessage = 'Please wait five seconds between conversions.';
+    } elseif ($selector_type === 'xpath' && !$allow_advanced_selectors) {
+        $form_handler->errorMessage = 'XPath is disabled in this web interface. Use a CSS selector.';
+    } elseif (!$allow_advanced_selectors && (!is_simple_css_selector($main_selector) || !is_simple_css_selector($exclude_selectors))) {
+        $form_handler->errorMessage = 'Use simple element, class or ID selectors, optionally separated by commas. Advanced selectors are disabled in this web interface.';
     } elseif (!in_array($selector_type, ['css', 'xpath'], true)) {
         $form_handler->errorMessage = 'Choose CSS or XPath.';
     } else {
@@ -365,8 +393,15 @@ if ($should_convert) {
             <textarea name="html" id="html" rows="8" placeholder="Paste your HTML here"><?php echo isset($html_input) ? htmlspecialchars($html_input, ENT_QUOTES, 'UTF-8') : ''; ?></textarea>
         </div>
 
+        <?php if ($allow_advanced_selectors): ?>
         <label for="selector_type">Selector type:</label>
         <select id="selector_type" name="selector_type"><option value="css">CSS</option><option value="xpath" <?php if ($selector_type === 'xpath') echo 'selected'; ?>>XPath</option></select>
+        <?php else: ?>
+        <input type="hidden" name="selector_type" value="css">
+        <?php endif; ?>
+        <?php if (!$allow_advanced_selectors): ?>
+        <p>Use simple selectors such as <code>main</code>, <code>.content</code>, <code>#article</code> or <code>article.story</code>. Comma-separated lists are supported.</p>
+        <?php endif; ?>
         <label for="main_selector">Content Selector (optional):</label>
         <input type="text" name="main_selector" id="main_selector" placeholder="e.g., main or .content or #article" maxlength="4096" title="Enter a CSS selector or XPath expression" <?php if (isset($main_selector)) echo 'value="' . htmlspecialchars($main_selector, ENT_QUOTES, 'UTF-8') . '"'; ?>>
 

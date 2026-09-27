@@ -72,6 +72,26 @@ try {
     expect_http($status === 204 && $body === '', 'Bodyless status preserved');
     [$status, $headers, $body] = request_page($address, 'text/markdown', '', 'POST');
     expect_http($status === 200 && strpos($body, '<main>') !== false, 'POST unchanged');
+    $ch = curl_init('http://' . $address . '/ui.php');
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_HEADER => true, CURLOPT_TIMEOUT => 5, CURLOPT_PROXY => '']);
+    $response = curl_exec($ch);
+    $headers = strtolower(substr($response, 0, curl_getinfo($ch, CURLINFO_HEADER_SIZE)));
+    curl_close($ch);
+    preg_match('/set-cookie: ([^;\r\n]+)/i', $response, $cookie);
+    preg_match('/name="csrf_token" value="([a-f0-9]+)"/', $response, $token);
+    expect_http(preg_match('/set-cookie:[^\r\n]*; secure/', $headers) === 1, 'Preserve configured Secure cookie behind TLS proxy');
+    expect_http(strpos($headers, 'samesite=strict') !== false, 'Do not weaken configured SameSite policy');
+    expect_http(strpos($response, '?PHPSESSID=') === false, 'Do not put session IDs in links');
+    foreach ([['xpath', '//*[count(//*[count(//*) > 0]) > 0]', 'ui.php', false], ['css', 'p ~ p ~ p ~ p ~ p', 'ui.php', false], ['xpath', '//main', 'trusted-ui.php', true]] as [$selector_type, $selector, $page, $allowed]) {
+        $ch = curl_init('http://' . $address . '/' . $page);
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 5, CURLOPT_PROXY => '', CURLOPT_COOKIE => $cookie[1], CURLOPT_POSTFIELDS => http_build_query([
+            'csrf_token' => $token[1], 'input_type' => 'html', 'html' => '<main><p>Safe</p></main>',
+            'selector_type' => $selector_type, 'main_selector' => $selector,
+        ])]);
+        $response = curl_exec($ch);
+        curl_close($ch);
+        expect_http($allowed ? strpos($response, 'id="markdownOutput">Safe</div>') !== false : strpos($response, 'disabled in this web interface') !== false, 'Enforce public policy and explicit trusted opt-in');
+    }
     echo "HTTP integration checks passed.\n";
 } finally {
     proc_terminate($process);

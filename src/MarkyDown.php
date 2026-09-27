@@ -5,7 +5,6 @@ use League\HTMLToMarkdown\HtmlConverter;
 use League\HTMLToMarkdown\Converter\TableConverter;
 use League\Uri\Http;
 use League\Uri\UriResolver;
-use Masterminds\HTML5;
 use Symfony\Component\CssSelector\CssSelectorConverter;
 use fivefilters\Readability\Configuration;
 use fivefilters\Readability\Readability;
@@ -53,6 +52,7 @@ class MarkyDown
 
     /**
      * Options: selector, selector_type (css|xpath), exclude, base_url, readability.
+     * Selectors must come from trusted configuration: syntax validation is not a CPU sandbox.
      * Explicit selection includes all matching elements, without nested duplicates.
      * Throws on invalid input or selection; never broadens an explicit selection.
      */
@@ -74,7 +74,7 @@ class MarkyDown
         if (trim($html) === '' || strlen($html) > $this->maxHtmlSize || !mb_check_encoding($html, 'UTF-8')) {
             throw new \InvalidArgumentException('HTML must be non-empty UTF-8 within the configured size limit.');
         }
-        $dom = (new HTML5(['disable_html_ns' => true]))->loadHTML($html);
+        $dom = HtmlParser::parse($html);
         $xpath = new \DOMXPath($dom);
         $exclude = $options['exclude'];
         if ($exclude !== null && !is_string($exclude) && !is_array($exclude)) {
@@ -141,7 +141,7 @@ class MarkyDown
             $content = $dom->saveHTML();
         }
         // Strip active elements before sanitizing; preserve article headers and footers.
-        $fragment = (new HTML5(['disable_html_ns' => true]))->loadHTML($content);
+        $fragment = HtmlParser::parse($content);
         $query = new \DOMXPath($fragment);
         foreach ($query->query('//script|//style|//iframe|//object|//embed|//form|//template|//noscript') as $node) {
             $node->parentNode->removeChild($node);

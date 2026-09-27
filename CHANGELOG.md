@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Security follow-up
+- Require PHP 8.3+ (8.x), upgrade Symfony CssSelector to 7.4 LTS, and remove the obsolete PHP 8.0 polyfill.
+- Preserve administrator-configured Secure and SameSite=Strict session cookies behind TLS proxies; disable session IDs in URLs.
+- Reject excessive HTML nesting and element counts during parsing to mitigate resource exhaustion below the byte limit.
+- Restrict public-form selectors to a simple CSS subset because arbitrary XPath and complex CSS can exhaust CPU. Trusted deployments can opt in with `MARKYDOWN_ALLOW_ADVANCED_SELECTORS=1`; trusted PHP configuration continues to support XPath.
+- **Upgrade:** update the server to PHP 8.3 or newer before running `composer install`. Earlier PHP compatibility notes below describe the previous implementation.
+
 ### Added
 - Optional PHP page integration with HTML/Markdown content negotiation, quality weights, HEAD support and cache variation.
 - Direct XPath selection, multiple CSS/XPath matches and exclusions without duplicate nested content.
